@@ -1,0 +1,3 @@
+"use client";
+import Link from "next/link"; import {ReactNode} from "react";
+export default function AppShell({children}:{children:ReactNode}){return <div><header className="border-b bg-white px-5 py-4"><Link href="/" className="text-xl font-black text-teal-700">SplitMate</Link></header><div className="mx-auto grid max-w-7xl gap-6 p-5 md:grid-cols-[210px_1fr]"><aside className="flex gap-2 overflow-auto rounded-2xl border bg-white p-3 md:flex-col">{[["/","Dashboard"],["/expenses","Expenses"],["/groups","Groups"],["/settle","Settle up"]].map(([href,label])=><Link key={href} href={href} className="rounded-xl px-3 py-3 font-medium hover:bg-teal-50">{label}</Link>)}</aside><main className="space-y-6">{children}</main></div></div>}

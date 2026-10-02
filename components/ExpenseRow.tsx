@@ -1,0 +1,2 @@
+"use client"; import {Expense} from "@/lib/types"; import {useSplitMate} from "@/lib/store"; import {money} from "@/lib/calculations";
+export default function ExpenseRow({expense}:{expense:Expense}){const s=useSplitMate();return <div className="flex min-w-0 flex-1 justify-between gap-4"><div><p className="font-semibold">{expense.description}</p><p className="text-sm text-slate-500">{s.groupName(expense.groupId)} · paid by {s.personName(expense.paidBy)} · {expense.splitType}</p></div><strong>{money(expense.amount)}</strong></div>}

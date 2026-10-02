@@ -1,0 +1,1 @@
+import {ReactNode} from "react"; export default function Panel({title,children}:{title?:string,children:ReactNode}){return <section className="rounded-2xl border bg-white p-5 shadow-sm">{title&&<h3 className="mb-3 text-lg font-bold">{title}</h3>}{children}</section>}
