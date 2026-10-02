@@ -1,6 +1,138 @@
 "use client";
-import {createContext,useContext,useEffect,useMemo,useState} from "react"; import {Expense,Group,Payment,Person} from "./types"; import {getBalances,simplify} from "./calculations";
-type Suggestion={from:string;to:string;amount:number};
-export type SplitMateStore={people:Person[];groups:Group[];expenses:Expense[];payments:Payment[];balances:Record<string,number>;suggestions:Suggestion[];total:number;personName:(id:string)=>string;groupName:(id:string)=>string;addExpense:(e:Expense)=>void;deleteExpense:(id:string)=>void;addGroup:(g:Group)=>void;markPaid:(x:Suggestion)=>void};
-const people:Person[]=[{id:"yash",name:"Yash",email:"you@example.com"},{id:"apurva",name:"Apurva",email:"apurva@example.com"},{id:"manan",name:"Manan",email:"manan@example.com"}];const initialGroups:Group[]=[{id:"scotland",name:"Scotland Trip",members:["yash","apurva","manan"]}];const initialExpenses:Expense[]=[{id:"demo",description:"Hotel booking",groupId:"scotland",paidBy:"yash",amount:300,date:"2026-10-01",splitType:"equal",splits:{yash:100,apurva:100,manan:100}}];
-const C=createContext<SplitMateStore|null>(null);export function StoreProvider({children}:{children:React.ReactNode}){const[groups,setGroups]=useState<Group[]>(initialGroups),[expenses,setExpenses]=useState<Expense[]>(initialExpenses),[payments,setPayments]=useState<Payment[]>([]);useEffect(()=>{const x=localStorage.getItem("splitmate");if(x){const d=JSON.parse(x);setGroups(d.groups||initialGroups);setExpenses(d.expenses||initialExpenses);setPayments(d.payments||[]) }},[]);useEffect(()=>localStorage.setItem("splitmate",JSON.stringify({groups,expenses,payments})),[groups,expenses,payments]);const balances=useMemo(()=>getBalances(people,expenses,payments),[expenses,payments]);const value:SplitMateStore={people,groups,expenses,payments,balances,suggestions:simplify(balances),total:expenses.reduce((a,e)=>a+e.amount,0),personName:(id:string)=>people.find(p=>p.id===id)?.name||"Unknown",groupName:(id:string)=>groups.find(g=>g.id===id)?.name||"No group",addExpense:(e:Expense)=>setExpenses(x=>[...x,e]),deleteExpense:(id:string)=>setExpenses(x=>x.filter(e=>e.id!==id)),addGroup:(g:Group)=>setGroups(x=>[...x,g]),markPaid:(x:Suggestion)=>setPayments(p=>[...p,{...x,id:crypto.randomUUID(),date:new Date().toISOString().slice(0,10)}])};return <C.Provider value={value}>{children}</C.Provider>} export const useSplitMate=()=>{const c=useContext(C);if(!c)throw new Error("useSplitMate must be used within StoreProvider");return c};
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { Expense, Group, Payment, Person } from "./types";
+import { getBalances, simplify } from "./calculations";
+
+type Suggestion = { from: string; to: string; amount: number };
+
+export type SplitMateStore = {
+  people: Person[];
+  groups: Group[];
+  expenses: Expense[];
+  payments: Payment[];
+  balances: Record<string, number>;
+  suggestions: Suggestion[];
+  total: number;
+  loading: boolean;
+  error: string | null;
+  personName: (id: string) => string;
+  groupName: (id: string) => string;
+  addExpense: (e: Expense) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
+  addGroup: (g: Group) => Promise<void>;
+  markPaid: (x: Suggestion) => Promise<void>;
+};
+
+const C = createContext<SplitMateStore | null>(null);
+
+async function json<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Request failed (${res.status})`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export function StoreProvider({ children }: { children: React.ReactNode }) {
+  const [people, setPeople] = useState<Person[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load everything from the database on mount.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const data = await json<{
+          people: Person[];
+          groups: Group[];
+          expenses: Expense[];
+          payments: Payment[];
+        }>(await fetch("/api/data"));
+        if (!active) return;
+        setPeople(data.people);
+        setGroups(data.groups);
+        setExpenses(data.expenses);
+        setPayments(data.payments);
+      } catch (e) {
+        if (active) setError(e instanceof Error ? e.message : "Failed to load");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const balances = useMemo(
+    () => getBalances(people, expenses, payments),
+    [people, expenses, payments]
+  );
+
+  const value: SplitMateStore = {
+    people,
+    groups,
+    expenses,
+    payments,
+    balances,
+    suggestions: simplify(balances),
+    total: expenses.reduce((a, e) => a + e.amount, 0),
+    loading,
+    error,
+    personName: (id) => people.find((p) => p.id === id)?.name || "Unknown",
+    groupName: (id) => groups.find((g) => g.id === id)?.name || "No group",
+    addExpense: async (e) => {
+      const saved = await json<Expense>(
+        await fetch("/api/expenses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(e),
+        })
+      );
+      setExpenses((x) => [...x, saved]);
+    },
+    deleteExpense: async (id) => {
+      await json<{ ok: true }>(
+        await fetch(`/api/expenses/${id}`, { method: "DELETE" })
+      );
+      setExpenses((x) => x.filter((e) => e.id !== id));
+    },
+    addGroup: async (g) => {
+      await json<Group>(
+        await fetch("/api/groups", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(g),
+        })
+      );
+      setGroups((x) => [...x, g]);
+    },
+    markPaid: async (x) => {
+      const payment: Payment = {
+        ...x,
+        id: crypto.randomUUID(),
+        date: new Date().toISOString().slice(0, 10),
+      };
+      const saved = await json<Payment>(
+        await fetch("/api/payments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payment),
+        })
+      );
+      setPayments((p) => [...p, saved]);
+    },
+  };
+
+  return <C.Provider value={value}>{children}</C.Provider>;
+}
+
+export const useSplitMate = () => {
+  const c = useContext(C);
+  if (!c) throw new Error("useSplitMate must be used within StoreProvider");
+  return c;
+};
